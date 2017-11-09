@@ -1,0 +1,50 @@
+#cloud-config
+
+manage_etc_hosts: True
+
+fs_setup:
+  - label: None,
+    filesystem: 'xfs'
+    device: '/dev/xvdg'
+    partition: 'auto'
+
+mounts:
+  - [ '/dev/xvdg', /mnt/db, auto, "defaults,nofail", '0', '2' ]
+  - [ '/dev/xvdb', null ]
+
+write_files:
+  - content: ${mongo_key}
+    path: /tmp/keyfile
+    owner: mongodb:mongodb
+    permissions: '0600'
+  - content: |
+      systemLog:
+         destination: file
+         path: "/var/log/mongodb/mongodbPrimary.log"
+         quiet: false
+         logAppend: true
+      storage:
+         dbPath: "/mnt/db/mongodPrimary/dbs"
+         directoryPerDB: true
+         engine: wiredTiger
+         journal:
+            enabled: true
+      processManagement:
+         pidFilePath: /mnt/db/mongodPrimary/mongod.pid
+      net:
+         port: 27017
+      replication:
+        replSetName: "${replica_set_name}"
+        oplogSizeMB: 10240
+      security:
+        keyFile: /mnt/db/mongodPrimary/keyfile
+        authorization: enabled
+    path: /etc/mongodPrimary.conf
+    owner: root:root
+    permissions: '0644'
+
+runcmd:
+  # Fixes rsyslog using the wrong hostname
+  - systemctl restart rsyslog
+  - mount -a
+  - mv /tmp/keyfile /mnt/db/mongodPrimary/keyfile
