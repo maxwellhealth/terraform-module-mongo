@@ -1,4 +1,9 @@
 # Variables
+variable "bastion_security_group" {
+  type        = "string"
+  description = "Security group allowing access from Bastion host"
+}
+
 variable "key_name" {
   type        = "string"
   description = "key pair name used with new ec2 instances"

@@ -19,11 +19,6 @@ variable "ssh_security_group" {
   description = "list of security group ids to grant ssh access"
 }
 
-variable "vault_security_group" {
-  type        = "string"
-  description = "Security group allowing access from vault host"
-}
-
 # security group for mongo front end
 resource "aws_security_group" "balancer" {
   name   = "${var.environment}-mongo-balancer"
