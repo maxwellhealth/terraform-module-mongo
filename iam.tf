@@ -23,14 +23,14 @@ resource "aws_iam_instance_profile" "mongo" {
   role = aws_iam_role.mongo.name
 }
 
-data "aws_iam_policy_document" "mongo" {
-  statement {
-  }
-}
+# data "aws_iam_policy_document" "mongo" {
+#   statement {
+#   }
+# }
 
-# IAM role policy attached to the profile
-resource "aws_iam_role_policy" "mongo" {
-  name   = aws_iam_role.mongo.name
-  role   = aws_iam_role.mongo.id
-  policy = data.aws_iam_policy_document.mongo.json
-}
+# # IAM role policy attached to the profile
+# resource "aws_iam_role_policy" "mongo" {
+#   name   = aws_iam_role.mongo.name
+#   role   = aws_iam_role.mongo.id
+#   policy = data.aws_iam_policy_document.mongo.json
+# }
