@@ -1,31 +1,36 @@
 variable "dns_name" {
-  type        = "string"
+  type        = string
   description = "Hostname prefix for route53 record creation"
   default     = "mongo0"
 }
 
 variable "dns_zone" {
-  type        = "string"
+  type        = string
   description = "Route 53 zone id to create records in"
 }
 
 variable "mongo_security_group" {
-  type        = "list"
+  type        = list(string)
   description = "list of security group ids to grant mongo access"
 }
 
 variable "ssh_security_group" {
-  type        = "list"
+  type        = list(string)
   description = "list of security group ids to grant ssh access"
+  default     = []
+}
+
+locals {
+  ssh_group = concat(compact(var.ssh_security_group), [var.bastion_security_group])
 }
 
 # security group for mongo front end
 resource "aws_security_group" "balancer" {
   name   = "${var.environment}-mongo-balancer"
-  vpc_id = "${var.vpc_id}"
+  vpc_id = var.vpc_id
 
   tags = {
-    Environment = "${var.environment}"
+    Environment = var.environment
     Name        = "${var.environment}-mongo-balancer"
     Platform    = "ots"
     Role        = "database"
@@ -41,18 +46,18 @@ resource "aws_security_group_rule" "bal_outbound" {
   to_port           = "0"
   protocol          = "-1"
   cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = "${aws_security_group.balancer.id}"
+  security_group_id = aws_security_group.balancer.id
 }
 
 ## external ssh access
 resource "aws_security_group_rule" "bal_ssh" {
-  count                    = "${length(var.ssh_security_group)}"
+  count                    = length(local.ssh_group)
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
   protocol                 = "tcp"
-  source_security_group_id = "${element(var.ssh_security_group, count.index)}"
-  security_group_id        = "${aws_security_group.balancer.id}"
+  source_security_group_id = element(local.ssh_group, count.index)
+  security_group_id        = aws_security_group.balancer.id
 }
 
 ## mongo has to talk to itself
@@ -62,27 +67,27 @@ resource "aws_security_group_rule" "bal_mongo_self" {
   from_port                = 27017
   to_port                  = 27017
   protocol                 = "tcp"
-  source_security_group_id = "${aws_security_group.node.id}"
-  security_group_id        = "${aws_security_group.balancer.id}"
+  source_security_group_id = aws_security_group.host.id
+  security_group_id        = aws_security_group.balancer.id
 }
 
 ## external mongo access
 resource "aws_security_group_rule" "bal_mongo" {
-  count                    = "${length(var.mongo_security_group)}"
+  count                    = length(var.mongo_security_group)
   type                     = "ingress"
   from_port                = 27017
   to_port                  = 27017
   protocol                 = "tcp"
-  source_security_group_id = "${element(var.mongo_security_group, count.index)}"
-  security_group_id        = "${aws_security_group.balancer.id}"
+  source_security_group_id = element(var.mongo_security_group, count.index)
+  security_group_id        = aws_security_group.balancer.id
 }
 
 # external access
 resource "aws_elb" "mongo" {
-  count                       = "${var.cluster_size}"
+  count                       = var.cluster_size
   name                        = "${var.environment}-mongo0${count.index + 1}"
-  security_groups             = ["${aws_security_group.balancer.id}"]
-  subnets                     = ["${element(var.private_subnets, count.index)}"]
+  security_groups             = [aws_security_group.balancer.id]
+  subnets                     = [element(var.private_subnets, count.index)]
   idle_timeout                = 1800
   connection_draining         = true
   connection_draining_timeout = 300
@@ -111,7 +116,7 @@ resource "aws_elb" "mongo" {
   }
 
   tags = {
-    Environment = "${var.environment}"
+    Environment = var.environment
     Name        = "${var.environment}-mongo0${count.index + 1}"
     Platform    = "ots"
     Role        = "database"
@@ -121,24 +126,24 @@ resource "aws_elb" "mongo" {
 }
 
 resource "aws_autoscaling_attachment" "mongo" {
-  count                  = "${var.cluster_size}"
-  autoscaling_group_name = "${element(aws_autoscaling_group.mongo.*.id, count.index)}"
-  elb                    = "${element(aws_elb.mongo.*.id, count.index)}"
+  count                  = var.cluster_size
+  autoscaling_group_name = element(aws_autoscaling_group.mongo.*.id, count.index)
+  elb                    = element(aws_elb.mongo.*.id, count.index)
 }
 
 resource "aws_route53_record" "mongo" {
-  count   = "${var.cluster_size}"
-  zone_id = "${var.dns_zone}"
-  name    = "${lookup(var.dns_name, var.environment)}${count.index + 1}"
+  count   = var.cluster_size
+  zone_id = var.dns_zone
+  name    = "${var.dns_name}${count.index + 1}"
   type    = "A"
 
   alias {
-    name                   = "${element(aws_elb.mongo.*.dns_name, count.index)}"
-    zone_id                = "${element(aws_elb.mongo.*.zone_id, count.index)}"
+    name                   = element(aws_elb.mongo.*.dns_name, count.index)
+    zone_id                = element(aws_elb.mongo.*.zone_id, count.index)
     evaluate_target_health = false
   }
 }
 
 output "security_group_id" {
-  value = "${aws_security_group.balancer.id}"
+  value = aws_security_group.balancer.id
 }
