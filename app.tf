@@ -1,33 +1,33 @@
 # Variables
 variable "bastion_security_group" {
-  type        = "string"
+  type        = string
   description = "Security group allowing access from Bastion host"
 }
 
 variable "key_name" {
-  type        = "string"
+  type        = string
   description = "key pair name used with new ec2 instances"
 }
 
 variable "instance_type" {
-  type        = "string"
+  type        = string
   description = "AWS EC2 instance type to use for creating cluster nodes"
   default     = "r4.2xlarge"
 }
 
 variable "replica_set_name" {
-  type        = "string"
+  type        = string
   description = "Mongo replica set name"
 }
 
 variable "root_vol_size" {
-  type        = "string"
+  type        = string
   description = "Space (in Gigabytes) to give to the instance root disk"
   default     = "24"
 }
 
 variable "vol_size" {
-  type        = "string"
+  type        = string
   description = "Space (in Gigabytes) to give to MongoDB"
   default     = "100"
 }
@@ -38,6 +38,7 @@ data "aws_caller_identity" "current" {}
 # find latest ami in your account named "mongo-*"
 data "aws_ami" "mongo" {
   most_recent = true
+  owners      = [data.aws_caller_identity.current.account_id]
 
   filter {
     name   = "virtualization-type"
@@ -47,11 +48,6 @@ data "aws_ami" "mongo" {
   filter {
     name   = "architecture"
     values = ["x86_64"]
-  }
-
-  filter {
-    name   = "owner-id"
-    values = ["${data.aws_caller_identity.current.account_id}"]
   }
 
   filter {
@@ -77,31 +73,31 @@ resource "random_string" "mongo_key" {
 }
 
 data "template_file" "userdata" {
-  template = "${file("${path.module}/templates/userdata.tmpl.yaml")}"
+  template = file("${path.module}/templates/userdata.tmpl.yaml")
 
-  vars {
-    replica_set_name = "${lookup(var.replica_set_name, var.environment)}"
-    mongo_key        = "${random_string.mongo_key.result}"
+  vars = {
+    replica_set_name = var.replica_set_name
+    mongo_key        = random_string.mongo_key.result
   }
 }
 
 resource "aws_launch_configuration" "mongo" {
-  iam_instance_profile = "${aws_iam_instance_profile.mongo.id}"
-  image_id             = "${data.aws_ami.mongo.id}"
-  instance_type        = "${var.instance_type}"
+  iam_instance_profile = aws_iam_instance_profile.mongo.id
+  image_id             = data.aws_ami.mongo.id
+  instance_type        = var.instance_type
   name_prefix          = "${var.environment}-mongo-"
-  security_groups      = ["${aws_security_group.host.id}"]
-  user_data            = "${data.template_file.userdata.rendered}"
-  key_name             = "${var.key_name}"
+  security_groups      = [aws_security_group.host.id]
+  user_data            = data.template_file.userdata.rendered
+  key_name             = var.key_name
 
   root_block_device {
     volume_type = "standard"
-    volume_size = "${var.root_vol_size}"
+    volume_size = var.root_vol_size
   }
 
   ebs_block_device {
     device_name = "/dev/xvdg"
-    volume_size = "${var.vol_size}"
+    volume_size = var.vol_size
     volume_type = "gp2"
     encrypted   = "true"
   }
@@ -112,18 +108,18 @@ resource "aws_launch_configuration" "mongo" {
 }
 
 resource "aws_autoscaling_group" "mongo" {
-  count                     = "${var.cluster_size}"
+  count                     = var.cluster_size
   name                      = "${var.environment}-mongo0${count.index + 1}"
   max_size                  = 1
   min_size                  = 1
   health_check_grace_period = 300
   health_check_type         = "EC2"
-  launch_configuration      = "${aws_launch_configuration.mongo.id}"
-  vpc_zone_identifier       = ["${element(var.private_subnets, count.index)}"]
+  launch_configuration      = aws_launch_configuration.mongo.id
+  vpc_zone_identifier       = [element(var.private_subnets, count.index)]
 
   tag {
     key                 = "Environment"
-    value               = "${var.environment}"
+    value               = var.environment
     propagate_at_launch = true
   }
 
@@ -172,10 +168,10 @@ resource "aws_autoscaling_group" "mongo" {
 # security group for mongo hosts
 resource "aws_security_group" "host" {
   name   = "${var.environment}-mongo-host"
-  vpc_id = "${var.vpc_id}"
+  vpc_id = var.vpc_id
 
   tags = {
-    Environment = "${var.environment}"
+    Environment = var.environment
     Name        = "${var.environment}-mongo-host"
     Platform    = "ots"
     Role        = "database"
@@ -191,7 +187,7 @@ resource "aws_security_group_rule" "host_outbound" {
   to_port           = "0"
   protocol          = "-1"
   cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = "${aws_security_group.host.id}"
+  security_group_id = aws_security_group.host.id
 }
 
 ## allow all from the bastion
@@ -200,8 +196,8 @@ resource "aws_security_group_rule" "host_bastion" {
   from_port                = 0
   to_port                  = 0
   protocol                 = "-1"
-  source_security_group_id = "${var.bastion_security_group}"
-  security_group_id        = "${aws_security_group.host.id}"
+  source_security_group_id = var.bastion_security_group
+  security_group_id        = aws_security_group.host.id
 }
 
 ## allow ssh inbound from load balancer to cluster
@@ -210,8 +206,8 @@ resource "aws_security_group_rule" "host_ssh" {
   from_port                = 22
   to_port                  = 22
   protocol                 = "tcp"
-  source_security_group_id = "${aws_security_group.balancer.id}"
-  security_group_id        = "${aws_security_group.host.id}"
+  source_security_group_id = aws_security_group.balancer.id
+  security_group_id        = aws_security_group.host.id
 }
 
 ## allow mongo inbound from load balancer to cluster
@@ -220,8 +216,8 @@ resource "aws_security_group_rule" "host_mongo" {
   from_port                = 27017
   to_port                  = 27017
   protocol                 = "tcp"
-  source_security_group_id = "${aws_security_group.balancer.id}"
-  security_group_id        = "${aws_security_group.host.id}"
+  source_security_group_id = aws_security_group.balancer.id
+  security_group_id        = aws_security_group.host.id
 }
 
 ## allow mongo to talk to itself
@@ -231,5 +227,5 @@ resource "aws_security_group_rule" "host_mongo_self" {
   to_port           = 27017
   protocol          = "tcp"
   self              = true
-  security_group_id = "${aws_security_group.host.id}"
+  security_group_id = aws_security_group.host.id
 }
